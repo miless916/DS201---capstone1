@@ -118,6 +118,7 @@ kable(missing_summary, caption = "Missing Values by Column")
 ```
 
 Note: `index_sa` (seasonally adjusted) is missing for about 48% of rows (89,897 of 186,011) — this is because seasonal adjustment isn't computed for all `hpi_type`/`level` combinations, not random missingness. The same is true for `rstderr` and `note`, which are populated only for certain series/annotations.
+
 ### Handling Missing Values
 Missing values in this dataset are largely structural rather than random. For index_sa, seasonal adjustment is not available for every series or geographic level. Because of this, our primary analysis will use index_nsa, which has much broader coverage. If seasonally adjusted values are needed, we can restrict the analysis to subsets of the data where index_sa is available. Another possible approach would be to estimate seasonal adjustments for missing observations using an appropriate time-series method, though this would require additional assumptions.
 
@@ -276,6 +277,7 @@ ggplot(
     plot.subtitle = element_text(size = 11)
   )
 ```
+
 ### 3. Complementary Dataset: Census Building Permits Survey
 
 A useful complementary dataset is the U.S. Census Bureau Building

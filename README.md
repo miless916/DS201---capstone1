@@ -238,15 +238,19 @@ Note: `index_sa` (seasonally adjusted) is missing for about 48% of rows
 (89,897 of 186,011) — this is because seasonal adjustment isn’t computed
 for all `hpi_type`/`level` combinations, not random missingness. The
 same is true for `rstderr` and `note`, which are populated only for
-certain series/annotations. \### Handling Missing Values Missing values
-in this dataset are largely structural rather than random. For index_sa,
-seasonal adjustment is not available for every series or geographic
-level. Because of this, our primary analysis will use index_nsa, which
-has much broader coverage. If seasonally adjusted values are needed, we
-can restrict the analysis to subsets of the data where index_sa is
-available. Another possible approach would be to estimate seasonal
-adjustments for missing observations using an appropriate time-series
-method, though this would require additional assumptions.
+certain series/annotations.
+
+### Handling Missing Values
+
+Missing values in this dataset are largely structural rather than
+random. For index_sa, seasonal adjustment is not available for every
+series or geographic level. Because of this, our primary analysis will
+use index_nsa, which has much broader coverage. If seasonally adjusted
+values are needed, we can restrict the analysis to subsets of the data
+where index_sa is available. Another possible approach would be to
+estimate seasonal adjustments for missing observations using an
+appropriate time-series method, though this would require additional
+assumptions.
 
 For rstderr, we would not attempt to manually fill in missing values.
 This variable reflects the estimated uncertainty or reliability of the
@@ -467,8 +471,9 @@ ggplot(
   )
 ```
 
-![](README_files/figure-gfm/year-change-1.png)<!-- --> \### 3.
-Complementary Dataset: Census Building Permits Survey
+![](README_files/figure-gfm/year-change-1.png)<!-- -->
+
+### 3. Complementary Dataset: Census Building Permits Survey
 
 A useful complementary dataset is the U.S. Census Bureau Building
 Permits Survey.
