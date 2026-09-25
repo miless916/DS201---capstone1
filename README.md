@@ -1,6 +1,6 @@
 README
 ================
-Miles &
+Miles & Lily
 
 # Getting into Business: Real Estate Investment Data Exploration
 
