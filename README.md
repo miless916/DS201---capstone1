@@ -1,6 +1,6 @@
 README
 ================
-Miles & Lily
+Miles Nienstadt & Lily Nathan
 
 # Getting into Business: Real Estate Investment Data Exploration
 
@@ -205,11 +205,54 @@ hpi_master %>%
     ## 3                  State  51
     ## 4 USA or Census Division  10
 
+### Missing values
+
+``` r
+missing_summary <- hpi_master %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "Column", values_to = "Missing_Count") %>%
+  mutate(Missing_Pct = round(100 * Missing_Count / nrow(hpi_master), 1)) %>%
+  arrange(desc(Missing_Count))
+
+kable(missing_summary, caption = "Missing Values by Column")
+```
+
+| Column     | Missing_Count | Missing_Pct |
+|:-----------|--------------:|------------:|
+| rstderr    |        127791 |        68.7 |
+| index_sa   |         89897 |        48.3 |
+| hpi_type   |             0 |         0.0 |
+| hpi_flavor |             0 |         0.0 |
+| frequency  |             0 |         0.0 |
+| level      |             0 |         0.0 |
+| place_name |             0 |         0.0 |
+| place_id   |             0 |         0.0 |
+| yr         |             0 |         0.0 |
+| period     |             0 |         0.0 |
+| index_nsa  |             0 |         0.0 |
+| note       |             0 |         0.0 |
+
+Missing Values by Column
+
 Note: `index_sa` (seasonally adjusted) is missing for about 48% of rows
 (89,897 of 186,011) — this is because seasonal adjustment isn’t computed
 for all `hpi_type`/`level` combinations, not random missingness. The
 same is true for `rstderr` and `note`, which are populated only for
-certain series/annotations.
+certain series/annotations. \### Handling Missing Values Missing values
+in this dataset are largely structural rather than random. For index_sa,
+seasonal adjustment is not available for every series or geographic
+level. Because of this, our primary analysis will use index_nsa, which
+has much broader coverage. If seasonally adjusted values are needed, we
+can restrict the analysis to subsets of the data where index_sa is
+available. Another possible approach would be to estimate seasonal
+adjustments for missing observations using an appropriate time-series
+method, though this would require additional assumptions.
+
+For rstderr, we would not attempt to manually fill in missing values.
+This variable reflects the estimated uncertainty or reliability of the
+HPI calculation, so imputing it could create misleading measures of
+precision. Instead, missing rstderr values should be left as missing and
+only used where FHFA reports them.
 
 ## 2. Data Summary & Initial Insights
 
@@ -244,35 +287,6 @@ kable(numeric_summary, digits = 2, caption = "Summary Statistics for Numeric Var
 | rstderr   |    2.67 |    2.05 |   2.22 |    0.00 |   15.75 | 127791 |
 
 Summary Statistics for Numeric Variables
-
-### Missing values
-
-``` r
-missing_summary <- hpi_master %>%
-  summarise(across(everything(), ~sum(is.na(.)))) %>%
-  pivot_longer(everything(), names_to = "Column", values_to = "Missing_Count") %>%
-  mutate(Missing_Pct = round(100 * Missing_Count / nrow(hpi_master), 1)) %>%
-  arrange(desc(Missing_Count))
-
-kable(missing_summary, caption = "Missing Values by Column")
-```
-
-| Column     | Missing_Count | Missing_Pct |
-|:-----------|--------------:|------------:|
-| rstderr    |        127791 |        68.7 |
-| index_sa   |         89897 |        48.3 |
-| hpi_type   |             0 |         0.0 |
-| hpi_flavor |             0 |         0.0 |
-| frequency  |             0 |         0.0 |
-| level      |             0 |         0.0 |
-| place_name |             0 |         0.0 |
-| place_id   |             0 |         0.0 |
-| yr         |             0 |         0.0 |
-| period     |             0 |         0.0 |
-| index_nsa  |             0 |         0.0 |
-| note       |             0 |         0.0 |
-
-Missing Values by Column
 
 ### Frequency tables for categorical variables
 
@@ -338,46 +352,123 @@ ggplot(hpi_master, aes(x = index_nsa)) +
 
 ![](README_files/figure-gfm/hist-index-1.png)<!-- -->
 
-### Visualization: index_nsa by hpi_type
+### Visualization: National HPI Trend Over Time
 
 ``` r
-ggplot(hpi_master, aes(x = hpi_type, y = index_nsa, fill = hpi_type)) +
-  geom_boxplot(show.legend = FALSE) +
-  labs(title = "HPI (NSA) by Index Type", x = NULL, y = "Index (NSA)") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+national_over_time <- hpi_master %>%
+  filter(
+    place_id == "USA",
+    hpi_type == "traditional",
+    hpi_flavor == "purchase-only",
+    frequency == "monthly"
+  ) %>%
+  mutate(date = as.Date(paste(yr, period, "01", sep = "-")))
+
+ggplot(national_over_time, aes(x = date, y = index_nsa)) +
+  geom_line(color = "steelblue", linewidth = 0.9) +
+  labs(
+    title = "U.S. National House Price Index Over Time",
+    subtitle = "Traditional, Purchase-Only, Monthly (Not Seasonally Adjusted)",
+    x = NULL,
+    y = "Index (NSA, base = 100)"
+  ) +
+  theme_minimal()
 ```
 
 ![](README_files/figure-gfm/box-index-by-type-1.png)<!-- -->
 
-### Visualization: national HPI trend over time
+### Visualization: Census Division Trends
 
 ``` r
-national_trend <- hpi_master %>%
-  filter(place_id == "USA", hpi_type == "traditional", frequency == "monthly") %>%
-  mutate(date = as.Date(paste(yr, period, "01", sep = "-")))
+division_trends <- hpi_master %>%
+  filter(
+    level == "USA or Census Division",
+    place_id != "USA",
+    hpi_type == "traditional",
+    hpi_flavor == "purchase-only",
+    frequency == "quarterly"
+  ) %>%
+  mutate(
+    date = as.Date(paste(yr, period * 3, "01", sep = "-"))
+  )
 
-ggplot(national_trend, aes(x = date, y = index_nsa, color = hpi_flavor)) +
+ggplot(
+  division_trends,
+  aes(x = date, y = index_nsa, color = place_name)
+) +
   geom_line(linewidth = 0.8) +
-  labs(title = "U.S. National HPI Over Time (Traditional, Monthly)",
-       x = NULL, y = "Index (NSA)", color = "Flavor") +
+  labs(
+    title = "House Price Trends Across U.S. Census Divisions",
+    subtitle = "Traditional Purchase-Only HPI",
+    x = NULL,
+    y = "House Price Index",
+    color = "Census Division"
+  ) +
   theme_minimal()
 ```
 
-![](README_files/figure-gfm/national-trend-1.png)<!-- -->
+![](README_files/figure-gfm/census-trend-1.png)<!-- -->
 
-national_over_time \<- hpi_master %\>% filter(place_id == “USA”,
-hpi_type == “traditional”, hpi_flavor == “purchase-only”, frequency ==
-“monthly”) %\>% mutate(date = as.Date(paste(yr, period, “01”, sep =
-“-”)))
+### Five-Year House Price Growth by State
 
-ggplot(national_over_time, aes(x = date, y = index_nsa)) +
-geom_line(color = “steelblue”, linewidth = 0.9) + labs(title = “U.S.
-National House Price Index Over Time”, subtitle = “Traditional,
-Purchase-Only, Monthly (Not Seasonally Adjusted)”, x = NULL, y = “Index
-(NSA, base = 100)”) + theme_minimal()
+``` r
+state_data <- hpi_master %>%
+  filter(
+    level == "State",
+    hpi_type == "traditional",
+    hpi_flavor == "purchase-only",
+    frequency == "quarterly"
+  )
 
-### 3. Complementary Dataset: Census Building Permits Survey
+latest_year <- max(state_data$yr, na.rm = TRUE)
+
+latest_period <- state_data %>%
+  filter(yr == latest_year) %>%
+  summarise(period = max(period, na.rm = TRUE)) %>%
+  pull(period)
+
+state_latest <- state_data %>%
+  filter(
+    yr == latest_year,
+    period == latest_period
+  ) %>%
+  select(place_name, current_hpi = index_nsa)
+
+state_5yr <- state_data %>%
+  filter(
+    yr == latest_year - 5,
+    period == latest_period
+  ) %>%
+  select(place_name, hpi_5yr = index_nsa)
+
+state_growth <- state_latest %>%
+  inner_join(state_5yr, by = "place_name") %>%
+  mutate(
+    pct_change = 100 * (current_hpi / hpi_5yr - 1)
+  )
+
+ggplot(
+  state_growth,
+  aes(x = reorder(place_name, pct_change), y = pct_change)
+) +
+  geom_col(fill = "steelblue", width = 0.8) +
+  coord_flip() +
+  labs(
+    title = "Five-Year House Price Growth by State",
+    subtitle = "Traditional Purchase-Only HPI",
+    x = NULL,
+    y = "5-Year Change (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(size = 14),
+    plot.subtitle = element_text(size = 11)
+  )
+```
+
+![](README_files/figure-gfm/year-change-1.png)<!-- --> \### 3.
+Complementary Dataset: Census Building Permits Survey
 
 A useful complementary dataset is the U.S. Census Bureau Building
 Permits Survey.
@@ -401,15 +492,3 @@ housing markets.
 
 Source: [U.S. Census Bureau Building Permits
 Survey](https://www.census.gov/construction/bps/index.html)
-
-## 4. Communicating Your Findings
-
-*(To do: plain-language summary for a non-technical audience.)*
-
-## 3. Expanding Your Investment Knowledge
-
-*(To do: identify and describe a complementary dataset.)*
-
-## 4. Communicating Your Findings
-
-*(To do: plain-language summary for a non-technical audience.)*

@@ -1,6 +1,6 @@
 ---
 title: "README"
-author: "Miles & Lily "
+author: "Miles Nienstadt & Lily Nathan"
 output: 
   github_document:
   pandoc_args: ["--wrap=none"]
@@ -105,8 +105,23 @@ hpi_master %>%
   distinct(level, place_name, place_id) %>%
   count(level)
 ```
+### Missing values
+
+```{r missing-values}
+missing_summary <- hpi_master %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "Column", values_to = "Missing_Count") %>%
+  mutate(Missing_Pct = round(100 * Missing_Count / nrow(hpi_master), 1)) %>%
+  arrange(desc(Missing_Count))
+
+kable(missing_summary, caption = "Missing Values by Column")
+```
 
 Note: `index_sa` (seasonally adjusted) is missing for about 48% of rows (89,897 of 186,011) — this is because seasonal adjustment isn't computed for all `hpi_type`/`level` combinations, not random missingness. The same is true for `rstderr` and `note`, which are populated only for certain series/annotations.
+### Handling Missing Values
+Missing values in this dataset are largely structural rather than random. For index_sa, seasonal adjustment is not available for every series or geographic level. Because of this, our primary analysis will use index_nsa, which has much broader coverage. If seasonally adjusted values are needed, we can restrict the analysis to subsets of the data where index_sa is available. Another possible approach would be to estimate seasonal adjustments for missing observations using an appropriate time-series method, though this would require additional assumptions.
+
+For rstderr, we would not attempt to manually fill in missing values. This variable reflects the estimated uncertainty or reliability of the HPI calculation, so imputing it could create misleading measures of precision. Instead, missing rstderr values should be left as missing and only used where FHFA reports them.
 
 ## 2. Data Summary & Initial Insights
 
@@ -132,18 +147,6 @@ numeric_summary <- hpi_master %>%
 kable(numeric_summary, digits = 2, caption = "Summary Statistics for Numeric Variables")
 ```
 
-### Missing values
-
-```{r missing-values}
-missing_summary <- hpi_master %>%
-  summarise(across(everything(), ~sum(is.na(.)))) %>%
-  pivot_longer(everything(), names_to = "Column", values_to = "Missing_Count") %>%
-  mutate(Missing_Pct = round(100 * Missing_Count / nrow(hpi_master), 1)) %>%
-  arrange(desc(Missing_Count))
-
-kable(missing_summary, caption = "Missing Values by Column")
-```
-
 ### Frequency tables for categorical variables
 
 ```{r frequency-tables}
@@ -163,48 +166,116 @@ ggplot(hpi_master, aes(x = index_nsa)) +
   theme_minimal()
 ```
 
-### Visualization: index_nsa by hpi_type
+### Visualization: National HPI Trend Over Time
 
 ```{r box-index-by-type}
-ggplot(hpi_master, aes(x = hpi_type, y = index_nsa, fill = hpi_type)) +
-  geom_boxplot(show.legend = FALSE) +
-  labs(title = "HPI (NSA) by Index Type", x = NULL, y = "Index (NSA)") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
-```
-
-### Visualization: national HPI trend over time
-
-```{r national-trend}
-national_trend <- hpi_master %>%
-  filter(place_id == "USA", hpi_type == "traditional", frequency == "monthly") %>%
+national_over_time <- hpi_master %>%
+  filter(
+    place_id == "USA",
+    hpi_type == "traditional",
+    hpi_flavor == "purchase-only",
+    frequency == "monthly"
+  ) %>%
   mutate(date = as.Date(paste(yr, period, "01", sep = "-")))
 
-ggplot(national_trend, aes(x = date, y = index_nsa, color = hpi_flavor)) +
-  geom_line(linewidth = 0.8) +
-  labs(title = "U.S. National HPI Over Time (Traditional, Monthly)",
-       x = NULL, y = "Index (NSA)", color = "Flavor") +
+ggplot(national_over_time, aes(x = date, y = index_nsa)) +
+  geom_line(color = "steelblue", linewidth = 0.9) +
+  labs(
+    title = "U.S. National House Price Index Over Time",
+    subtitle = "Traditional, Purchase-Only, Monthly (Not Seasonally Adjusted)",
+    x = NULL,
+    y = "Index (NSA, base = 100)"
+  ) +
   theme_minimal()
 ```
-  
-  
-  national_over_time <- hpi_master %>%
-    filter(place_id == "USA",
-           hpi_type == "traditional",
-           hpi_flavor == "purchase-only",
-           frequency == "monthly") %>%
-    mutate(date = as.Date(paste(yr, period, "01", sep = "-")))
-  
-  ggplot(national_over_time, aes(x = date, y = index_nsa)) +
-    geom_line(color = "steelblue", linewidth = 0.9) +
-    labs(title = "U.S. National House Price Index Over Time",
-         subtitle = "Traditional, Purchase-Only, Monthly (Not Seasonally Adjusted)",
-         x = NULL, y = "Index (NSA, base = 100)") +
-    theme_minimal()
 
+### Visualization: Census Division Trends
 
+```{r census-trend}
+division_trends <- hpi_master %>%
+  filter(
+    level == "USA or Census Division",
+    place_id != "USA",
+    hpi_type == "traditional",
+    hpi_flavor == "purchase-only",
+    frequency == "quarterly"
+  ) %>%
+  mutate(
+    date = as.Date(paste(yr, period * 3, "01", sep = "-"))
+  )
 
+ggplot(
+  division_trends,
+  aes(x = date, y = index_nsa, color = place_name)
+) +
+  geom_line(linewidth = 0.8) +
+  labs(
+    title = "House Price Trends Across U.S. Census Divisions",
+    subtitle = "Traditional Purchase-Only HPI",
+    x = NULL,
+    y = "House Price Index",
+    color = "Census Division"
+  ) +
+  theme_minimal()
+```
 
+### Five-Year House Price Growth by State
+
+```{r year-change}
+state_data <- hpi_master %>%
+  filter(
+    level == "State",
+    hpi_type == "traditional",
+    hpi_flavor == "purchase-only",
+    frequency == "quarterly"
+  )
+
+latest_year <- max(state_data$yr, na.rm = TRUE)
+
+latest_period <- state_data %>%
+  filter(yr == latest_year) %>%
+  summarise(period = max(period, na.rm = TRUE)) %>%
+  pull(period)
+
+state_latest <- state_data %>%
+  filter(
+    yr == latest_year,
+    period == latest_period
+  ) %>%
+  select(place_name, current_hpi = index_nsa)
+
+state_5yr <- state_data %>%
+  filter(
+    yr == latest_year - 5,
+    period == latest_period
+  ) %>%
+  select(place_name, hpi_5yr = index_nsa)
+
+state_growth <- state_latest %>%
+  inner_join(state_5yr, by = "place_name") %>%
+  mutate(
+    pct_change = 100 * (current_hpi / hpi_5yr - 1)
+  )
+
+ggplot(
+  state_growth,
+  aes(x = reorder(place_name, pct_change), y = pct_change)
+) +
+  geom_col(fill = "steelblue", width = 0.8) +
+  coord_flip() +
+  labs(
+    title = "Five-Year House Price Growth by State",
+    subtitle = "Traditional Purchase-Only HPI",
+    x = NULL,
+    y = "5-Year Change (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(size = 14),
+    plot.subtitle = element_text(size = 11)
+  )
+```
 ### 3. Complementary Dataset: Census Building Permits Survey
 
 A useful complementary dataset is the U.S. Census Bureau Building
@@ -230,16 +301,8 @@ housing markets.
 Source: [U.S. Census Bureau Building Permits
 Survey](https://www.census.gov/construction/bps/index.html)
 
-## 4. Communicating Your Findings
-
-*(To do: plain-language summary for a non-technical audience.)*
 
 
 
-## 3. Expanding Your Investment Knowledge
 
-*(To do: identify and describe a complementary dataset.)*
 
-## 4. Communicating Your Findings
-
-*(To do: plain-language summary for a non-technical audience.)*
